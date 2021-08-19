@@ -35,7 +35,7 @@ float heatI; //Calcuated Heat Index by theDHT lib
 #define DHTTYPE DHT22
 DHT dht(DHTPIN, DHTTYPE); /// Init DHT sensor
 
-#define TOKEN "A1E-kYKuNNClfZkuC0GKT2WyLsaw4qFA9V" // Your Ubidots TOKEN
+#define TOKEN "insert your ubidots token" // Your Ubidots TOKEN
 #define WIFINAME "ourHome" //Your SSID
 #define WIFIPASS "Perfectpond217" // Your Wifi Password
 

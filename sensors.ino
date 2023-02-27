@@ -1,30 +1,32 @@
-// Temerature - Humidity and Water Sensor that will text me if the sensor goes off.
 // Information available at Ubidot.com
-// Created by jnissen using Ubidots library 
-// May 16th, 2017 - Added commentys by chaves
-//static const uint8_t D0   = 16;  nodemcu LED 
-//static const uint8_t D1   = 5;
-//static const uint8_t D2   = 4;   nodemcu LED default built in LED do not use as a GPIO data since the LED can cause voltage drops
-//static const uint8_t D3   = 0;
-//static const uint8_t D4   = 2;
-//static const uint8_t D5   = 14;
-//static const uint8_t D6   = 12;
-//static const uint8_t D7   = 13;
-//static const uint8_t D8   = 15;
-//static const uint8_t D9   = 3;
-//static const uint8_t D10  = 1;
+// Using Ubidots library 
 
+//                     PIN    GPIO
+//static const uint8_t D0   = 16;  //nodemcu 2nd LED 
+//static const uint8_t D1   = 5;   //Safe to use
+//static const uint8_t D2   = 4;   //nodemcu LED default built in LED do not use as a GPIO data since the LED can cause voltage drops
+//static const uint8_t D3   = 0;   // Safe to use low during download
+//static const uint8_t D4   = 2;   // U1TXD line
+//static const uint8_t D5   = 14;  // Safe to use
+//static const uint8_t D6   = 12;  // Safe to use
+//static const uint8_t D7   = 13;  // Safe to use
+//static const uint8_t D8   = 15;  // Safe to use low during power on
+//static const uint8_t D9   = 3; // Dont use since it is R0RXD
+//static const uint8_t D10  = 1;  // High during power on
+//GPIO pins 2,4,5,12,13,14,15 and 16 as input
 
 
 /****************************************
    Include Libraries
  ****************************************/
-#include "UbidotsESPMQTT.h" //the library uses PubSubClient.h if you have mutiple sensors you need to change the mesage sie on the PubsubClient from 128 to 256 or larger
+#include "UbidotsESPMQTT.h" 
 #include <DHT.h>; //Library used for DHT sensors such DHT22 temp humudity
+
 /****************************************
    Define Constants
  ****************************************/
 
+int myrestart = 300;  
 int hum; //Stores humidity value
 int dhtpwr = 14; // used as VCC on DHT22 to toggle on off for better results our attch to external VCC 3-5V.
 int dhtsetupT = 2010;//Minimun DHT22 setup time 2 sec or 2K mill sec
@@ -35,16 +37,18 @@ float heatI; //Calcuated Heat Index by theDHT lib
 #define DHTTYPE DHT22
 DHT dht(DHTPIN, DHTTYPE); /// Init DHT sensor
 
-#define TOKEN "insert your ubidots token" // Your Ubidots TOKEN
-#define WIFINAME "ourHome" //Your SSID
-#define WIFIPASS "Perfectpond217" // Your Wifi Password
+#define MQTT_CLIENT_NAME "ESP8266"
+#define TOKEN "BBFF-I....." // Your Ubidots TOKEN
+#define WIFINAME "ou" //Your SSID
+#define WIFIPASS "Per" // Your Wifi Password
 
-#define sensor    A0       // Hook water sensor to pin A0 of NODEMCU module
+#define sensor    A0        // Hook water sensor to pin A0 of NODEMCU module
+#define RADAR     D1       // Radar movement senson 
 #define LED       D0       // Led in NodeMCU/WeMos D1 Mini at pin GPIO2 (D4)
 #define BRIGHT    150      // Max led intensity (1-500)
 #define INHALE    900     // Inhalation time in milliseconwatteds.
 #define PULSE     INHALE*1000/BRIGHT
-#define REST      15000    // Rest Between Inhalations.
+#define REST      10000    // Rest Between Inhalations.
 
 Ubidots client(TOKEN);
 
@@ -68,9 +72,11 @@ void callback(char* topic, byte* payload, unsigned int length) {
 
 void setup() {
   // put your setup code here, to run once:
+  client.ubidotsSetBroker("things.ubidots.com");
   Serial.setRxBufferSize(400); //Added a larger Rx buffer for serial communications
   Serial.begin(115200);
   pinMode(sensor, INPUT);   // Analog pin setup for read
+  pinMode(RADAR, INPUT);    // radar sensor to read status
   pinMode(LED, OUTPUT);     // LED pin as output.
   client.setDebug(true);    // Pass a true or false bool value to activate debug messages
  
@@ -89,10 +95,7 @@ void loop() {
     client.reconnect();
   }
 
-  // A fancy delay routine! Makes the LED appear to "breathe" by slowly ramping up and down. This is to show you the water sensor is working 
-  // by slowly making the LED on the board glow from dim to bright and back dim. It's not really needed but it's a bit of fun to watch.
-  // If you don't add some delay the water sensor will attempt to "log" data often and your free Ubidots account may be disabled. This 
-  // delay is intended to create a new data point once every 15 seconds or so. 
+
 
   pinMode(dhtpwr,OUTPUT); //D5 pin 14 power pin for DHT sensor more stable power than VCC 3v
   digitalWrite(14,HIGH); // D5 set high to power on sensor
@@ -119,24 +122,45 @@ void loop() {
   }
 
  
-  
-  // Publish values of ADC0 water sensor. Water will cause the voltage to rise and the ADC will read this as a higher value.
-  // Once the value is read the NODEMCU will publish it to UBIDOTS. The Node MCU does not care what the reading is. It only reports it.
-  // If below trigger value the text message will NOT be delivered. Above trigger it's sent.
-
     hum = dht.readHumidity();                //Read Humidity
     temp= dht.readTemperature(true);         //Read Temp in F  val true  
     heatI = dht.computeHeatIndex(temp, hum); //Calcualte Heat Index
         
   adcValue = analogRead(sensor);    // Read the ADC channel
+  int moveyes = 25;
+  int moveon = digitalRead(RADAR);
+  unsigned long SEC = 1000L;
+  unsigned long MIN = SEC * 60;
+  
+  if (moveon==1) { moveyes = 50;
+  }
+  else { moveyes = 25;
+  }
+
+  digitalWrite(dhtpwr,LOW); //GPIO set LOW to power OFF sensor DHT provides more stable power to ESP during WiFi data send
+
   client.add("h2o", adcValue);     // Variable for the water heater sensor assigned the ADC value. This will show up in Ubidots within the water-sensor device
   client.add("hum",hum);
   client.add("temp",temp);
-  client.add("HeatIndex",heatI);
+  client.add("radar",moveyes);   // Publish 25 only if movement found
+  
   client.ubidotsPublish("chav_sensor");  // Device name for Ubidots. Make sure Ubidots is setup prior to loading and running this application. 
+
   client.loop();
 
-  digitalWrite(dhtpwr,LOW); // D5 set LOW to power OFF sensor
-  delay(REST);                  // take a rest...
+  delay(MIN);                  // take a rest  it is needed for Ubidots since they only allow data every few seconds ...
+  delay(MIN);
+  delay(MIN);
+  
+// restart the ESP after a few for estability
+//    Serial.print("ESP Restart Counter ");
+//    Serial.println(myrestart);
+ 
+  if(myrestart==0){
+    Serial.println("Reset..");
+    ESP.restart();
+  }
+ 
+  --myrestart; // decrease counter to restart
 
 }
